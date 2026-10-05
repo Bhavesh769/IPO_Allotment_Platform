@@ -4,6 +4,8 @@ from fastapi import FastAPI
 
 from app.db.database import create_tables, test_database_connection
 
+from app.api.routes.applications import router as applications_router
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -16,6 +18,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(applications_router)
 
 @app.get("/")
 def root():
