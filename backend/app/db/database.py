@@ -5,9 +5,14 @@ from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
+from app.db.base import Base
+from app.db.models import IPO, User
+
+
 BASE_DIR = Path(__file__).resolve().parents[2]
 
 load_dotenv(BASE_DIR / ".env")
+
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -34,3 +39,7 @@ def test_database_connection():
             text("SELECT current_database();")
         )
         return result.scalar()
+
+
+def create_tables():
+    Base.metadata.create_all(bind=engine)

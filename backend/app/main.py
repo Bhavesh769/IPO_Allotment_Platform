@@ -1,10 +1,19 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
-from app.db.database import test_database_connection
+from app.db.database import create_tables, test_database_connection
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    create_tables()
+    yield
 
 
 app = FastAPI(
-    title="IPO Application & Allotment Platform"
+    title="IPO Application & Allotment Platform",
+    lifespan=lifespan,
 )
 
 
