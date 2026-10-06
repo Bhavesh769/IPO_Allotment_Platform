@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
 from app.db.database import get_db
 from app.db.models.applications import Application
@@ -48,6 +49,15 @@ def create_application(
             detail="IPO is not open for applications"
         )
 
+    # Check for an existing request
+    existing_application = db.query(Application).filter(
+        Application.idempotency_key
+        == application_data.idempotency_key
+    ).first()
+
+    if existing_application:
+        return existing_application
+
     # Calculate application amount
     amount = (
         application_data.lots_requested
@@ -62,11 +72,24 @@ def create_application(
         lots_requested=application_data.lots_requested,
         amount=amount,
         status="PENDING",
-        idempotency_key=f"app-{application_data.user_id}-{application_data.ipo_id}",
+        idempotency_key=application_data.idempotency_key,
     )
 
-    db.add(application)
-    db.commit()
-    db.refresh(application)
+    try:
+        db.add(application)
+        db.commit()
+        db.refresh(application)
 
-    return application
+        return application
+
+    except IntegrityError:
+        db.rollback()
+
+        existing_application = db.query(Application).filter(
+            Application.idempotency_key == application_data.idempotency_key
+        ).first()
+
+        if existing_application:
+            return existing_application
+
+        raise

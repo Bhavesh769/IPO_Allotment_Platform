@@ -7,6 +7,7 @@ class ApplicationCreate(BaseModel):
     user_id: int
     ipo_id: int
     lots_requested: int = Field(gt=0)
+    idempotency_key: str
 
 
 class ApplicationResponse(BaseModel):
