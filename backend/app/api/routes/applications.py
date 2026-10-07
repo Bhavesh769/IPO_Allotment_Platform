@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
 from app.db.database import get_db
 from app.db.models.applications import Application
@@ -31,10 +32,21 @@ def create_application(
             detail="User not found"
         )
 
-    # Check if IPO exists
-    ipo = db.query(IPO).filter(
-        IPO.id == application_data.ipo_id
+    # Check if this request was already processed
+    existing_application = db.query(Application).filter(
+        Application.idempotency_key
+        == application_data.idempotency_key
     ).first()
+
+    if existing_application:
+        return existing_application
+
+    # Lock the IPO row for this transaction
+    ipo = db.execute(
+        select(IPO)
+        .where(IPO.id == application_data.ipo_id)
+        .with_for_update()
+    ).scalar_one_or_none()
 
     if not ipo:
         raise HTTPException(
@@ -49,14 +61,12 @@ def create_application(
             detail="IPO is not open for applications"
         )
 
-    # Check for an existing request
-    existing_application = db.query(Application).filter(
-        Application.idempotency_key
-        == application_data.idempotency_key
-    ).first()
-
-    if existing_application:
-        return existing_application
+    # Check whether enough lots are available
+    if application_data.lots_requested > ipo.available_lots:
+        raise HTTPException(
+            status_code=400,
+            detail="Not enough lots available"
+        )
 
     # Calculate application amount
     amount = (
@@ -75,8 +85,12 @@ def create_application(
         idempotency_key=application_data.idempotency_key,
     )
 
+    db.add(application)
+
+    # Reserve the requested lots
+    ipo.available_lots -= application_data.lots_requested
+
     try:
-        db.add(application)
         db.commit()
         db.refresh(application)
 
@@ -85,8 +99,11 @@ def create_application(
     except IntegrityError:
         db.rollback()
 
+        # Another concurrent request may have created
+        # the same idempotency key first.
         existing_application = db.query(Application).filter(
-            Application.idempotency_key == application_data.idempotency_key
+            Application.idempotency_key
+            == application_data.idempotency_key
         ).first()
 
         if existing_application:

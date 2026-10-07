@@ -42,6 +42,11 @@ class IPO(Base):
         nullable=False
     )
 
+    available_lots: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False
+    )
+
     open_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False
