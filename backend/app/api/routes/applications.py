@@ -2,13 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from datetime import datetime, timedelta, timezone
 
 from app.db.database import get_db
 from app.db.models.applications import Application
 from app.db.models.ipo import IPO
 from app.db.models.users import User
 from app.schemas.applications import ApplicationCreate, ApplicationResponse
-
+from app.db.models.fund_blocks import FundBlock
 
 router = APIRouter(
     prefix="/applications",
@@ -86,9 +87,18 @@ def create_application(
     )
 
     db.add(application)
+    db.flush()
 
-    # Reserve the requested lots
     ipo.available_lots -= application_data.lots_requested
+
+    fund_block = FundBlock(
+        application_id=application.id,
+        amount=amount,
+        status="BLOCKED",
+        expires_at=datetime.now(timezone.utc) + timedelta(minutes=30),
+    )
+
+    db.add(fund_block)
 
     try:
         db.commit()
@@ -98,9 +108,7 @@ def create_application(
 
     except IntegrityError:
         db.rollback()
-
-        # Another concurrent request may have created
-        # the same idempotency key first.
+        
         existing_application = db.query(Application).filter(
             Application.idempotency_key
             == application_data.idempotency_key
